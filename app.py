@@ -10,7 +10,7 @@ from openai import OpenAI
 
 app = Flask(__name__)
 
-# 從環境變數讀取金鑰 (更安全)
+# 從環境變數讀取金鑰
 CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET', '758691ddb63dabf3711a807297dcabd7')
 CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN', 'XbOeNFRjnqp0jKPZuX4aMgJJGsJ9IcHAGsiT925Zq8qgb9lT6AdP0OAeAM613QejMfep/+NkW+i18G9rMof++aIE1tjG4vDKYACF/CQAYcHqmekqRKvdI6Xr2KL7ClYQ3D8YNHJRrz3v2qOp0ZC6uwdB04t89/1O/w1cDnyilFU=')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
@@ -54,5 +54,6 @@ def handle_message(event):
         )
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    # 確保使用環境變數中的 PORT，Render 才能正確掃描到
+    port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
