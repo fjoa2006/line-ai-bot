@@ -57,3 +57,4 @@ if __name__ == "__main__":
     # 確保使用環境變數中的 PORT，Render 才能正確掃描到
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
+# Force redeploy
