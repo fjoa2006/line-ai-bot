@@ -48,17 +48,62 @@ user_threads_2 = {}
 
 
 # =============================================
+# 取得使用者 LINE 顯示名稱
+# =============================================
+def get_user_display_name(user_id, configuration):
+    """透過 LINE API 取得使用者的顯示名稱"""
+    try:
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+            profile = line_bot_api.get_profile(user_id)
+            return profile.display_name
+    except Exception as e:
+        print(f"[WARN] Failed to get user profile: {e}")
+        return "（無法取得名稱）"
+
+
+# =============================================
+# 從對話中擷取掛號相關資訊
+# =============================================
+def extract_booking_info(user_message, ai_reply):
+    """嘗試從病患訊息與機器人回覆中擷取掛號相關資訊"""
+    booking_keywords = [
+        '掛號', '預約', '掛好', '完成', '時間', '日期', '星期', '週',
+        '上午', '下午', '診', '院區', '汀洲', '內湖'
+    ]
+    combined = user_message + ' ' + ai_reply
+    found = any(kw in combined for kw in booking_keywords)
+    if found:
+        # 回傳病患訊息中可能含有的掛號資訊
+        return user_message
+    return None
+
+
+# =============================================
 # 傳送通知給管理員
 # =============================================
 def notify_admin(user_id, user_message, ai_reply, configuration):
     """當偵測到 [NOTIFY_ADMIN] 標記時，推播通知給管理員"""
     try:
+        # 取得病患 LINE 顯示名稱
+        display_name = get_user_display_name(user_id, configuration)
+
+        # 嘗試擷取掛號資訊
+        booking_info = extract_booking_info(user_message, ai_reply)
+
         notify_text = (
             f"🔔 【需要您關注的訊息】\n\n"
-            f"病患 ID：{user_id}\n"
-            f"病患訊息：{user_message}\n\n"
-            f"機器人回覆：{ai_reply[:200]}{'...' if len(ai_reply) > 200 else ''}"
+            f"病患姓名：{display_name}\n"
+            f"病患訊息：{user_message}\n"
         )
+
+        if booking_info:
+            notify_text += f"\n📋 掛號資訊：{booking_info}\n"
+
+        notify_text += (
+            f"\n機器人回覆：{ai_reply[:200]}{'...' if len(ai_reply) > 200 else ''}"
+        )
+
         with ApiClient(configuration) as api_client:
             line_bot_api = MessagingApi(api_client)
             line_bot_api.push_message(
