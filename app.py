@@ -3,7 +3,8 @@ from flask import Flask, request, abort
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import (
-    Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage
+    Configuration, ApiClient, MessagingApi,
+    ReplyMessageRequest, PushMessageRequest, TextMessage
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from openai import OpenAI
@@ -15,6 +16,11 @@ app = Flask(__name__)
 # =============================================
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 client = OpenAI(api_key=OPENAI_API_KEY)
+
+# =============================================
+# 管理員 LINE User ID（接收通知）
+# =============================================
+ADMIN_USER_ID = os.getenv('ADMIN_USER_ID', 'U29a37d4b6161a881428be1770ce098d5')
 
 # =============================================
 # 帳號 1：角落整合 官方 LINE（Assistants API 長期記憶版）
@@ -39,6 +45,30 @@ handler_2 = WebhookHandler(CHANNEL_SECRET_2)
 # 用於儲存每位使用者的 Thread ID（以帳號區分）
 user_threads_1 = {}
 user_threads_2 = {}
+
+
+# =============================================
+# 傳送通知給管理員
+# =============================================
+def notify_admin(user_id, user_message, ai_reply, configuration):
+    """當偵測到 [NOTIFY_ADMIN] 標記時，推播通知給管理員"""
+    try:
+        notify_text = (
+            f"🔔 【需要您關注的訊息】\n\n"
+            f"病患 ID：{user_id}\n"
+            f"病患訊息：{user_message}\n\n"
+            f"機器人回覆：{ai_reply[:200]}{'...' if len(ai_reply) > 200 else ''}"
+        )
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+            line_bot_api.push_message(
+                PushMessageRequest(
+                    to=ADMIN_USER_ID,
+                    messages=[TextMessage(text=notify_text)]
+                )
+            )
+    except Exception as e:
+        print(f"[WARN] Failed to notify admin: {e}")
 
 
 # =============================================
@@ -129,7 +159,19 @@ def handle_message_2(event):
     user_id = event.source.user_id
     user_message = event.message.text
     ai_reply = generate_reply_with_memory(user_id, user_message, ASSISTANT_ID_2, user_threads_2)
-    send_reply(event.reply_token, ai_reply, configuration_2)
+
+    # 偵測是否需要通知管理員
+    needs_notify = '[NOTIFY_ADMIN]' in ai_reply
+
+    # 移除標記，避免病患看到
+    clean_reply = ai_reply.replace('[NOTIFY_ADMIN]', '').strip()
+
+    # 回覆病患（乾淨版本）
+    send_reply(event.reply_token, clean_reply, configuration_2)
+
+    # 若需要，推播通知給管理員
+    if needs_notify:
+        notify_admin(user_id, user_message, clean_reply, configuration_2)
 
 
 if __name__ == "__main__":
