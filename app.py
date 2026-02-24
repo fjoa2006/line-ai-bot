@@ -8,7 +8,6 @@ from linebot.v3.messaging import (
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from openai import OpenAI
-import redis
 
 app = Flask(__name__)
 
@@ -16,7 +15,6 @@ app = Flask(__name__)
 CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET', '758691ddb63dabf3711a807297dcabd7')
 CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN', 'XbOeNFRjnqp0jKPZuX4aMgJJGsJ9IcHAGsiT925Zq8qgb9lT6AdP0OAeAM613QejMfep/+NkW+i18G9rMof++aIE1tjG4vDKYACF/CQAYcHqmekqRKvdI6Xr2KL7ClYQ3D8YNHJRrz3v2qOp0ZC6uwdB04t89/1O/w1cDnyilFU=')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
 
 # AI 回覆冷卻期（秒）
 AI_COOLDOWN_PERIOD = 3600  # 1 小時
@@ -25,35 +23,30 @@ configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(CHANNEL_SECRET)
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# 初始化 Redis
-try:
-    redis_client = redis.from_url(REDIS_URL)
-    redis_client.ping()
-    print("[Redis] Connected successfully")
-except Exception as e:
-    print(f"[Redis] Connection failed: {e}")
-    redis_client = None
+# 記憶體快取：存放「最後人工回覆時間」
+# 格式：{user_id: timestamp}
+human_reply_cache = {}
 
 def is_in_human_reply_cooldown(user_id: str) -> bool:
     """檢查使用者是否在人工回覆冷卻期內"""
-    if not redis_client:
+    if user_id not in human_reply_cache:
         return False
     
-    key = f"human_reply:{user_id}"
-    last_reply_time = redis_client.get(key)
+    last_reply_time = human_reply_cache[user_id]
+    current_time = time.time()
     
-    if last_reply_time:
+    # 檢查是否超過冷卻期
+    if current_time - last_reply_time < AI_COOLDOWN_PERIOD:
         return True
-    return False
+    else:
+        # 冷卻期已過，刪除記錄
+        del human_reply_cache[user_id]
+        return False
 
 def set_human_reply_cooldown(user_id: str):
     """設定人工回覆冷卻期"""
-    if not redis_client:
-        return
-    
-    key = f"human_reply:{user_id}"
-    redis_client.setex(key, AI_COOLDOWN_PERIOD, str(int(time.time())))
-    print(f"[Redis] Set cooldown for user {user_id} for {AI_COOLDOWN_PERIOD} seconds")
+    human_reply_cache[user_id] = time.time()
+    print(f"[Cache] Set cooldown for user {user_id} for {AI_COOLDOWN_PERIOD} seconds")
 
 @app.route("/line/webhook", methods=['POST'])
 def callback():
