@@ -1,1 +1,5 @@
-flask\nline-bot-sdk\nopenai\ngunicorn
+flask
+line-bot-sdk
+openai
+gunicorn
+redis
