@@ -1,12 +1,13 @@
 import os
 import time
+import json
 from flask import Flask, request, abort
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import (
     Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage
 )
-from linebot.v3.webhooks import MessageEvent, TextMessageContent
+from linebot.v3.webhooks import MessageEvent, TextMessageContent, FollowEvent, UnfollowEvent
 from openai import OpenAI
 
 app = Flask(__name__)
@@ -52,6 +53,28 @@ def set_human_reply_cooldown(user_id: str):
 def callback():
     signature = request.headers.get('X-Line-Signature')
     body = request.get_data(as_text=True)
+    
+    # 調試：列印接收到的事件
+    try:
+        events = json.loads(body)
+        for event in events.get('events', []):
+            print(f"[Webhook] Received event: {event.get('type')}")
+            
+            # 檢查是否是人工回覆事件（officialAccountLinkEvent）
+            if event.get('type') == 'officialAccountLinkEvent':
+                print("[Webhook] Detected official account link event")
+            
+            # 檢查是否是文字訊息（可能來自人工回覆）
+            if event.get('type') == 'message' and event.get('message', {}).get('type') == 'text':
+                # 檢查訊息是否來自官方帳號（人工回覆）
+                # LINE 的人工回覆會有特殊的 source 類型
+                source = event.get('source', {})
+                if source.get('type') == 'user':
+                    # 這是使用者的訊息，不是人工回覆
+                    pass
+    except Exception as e:
+        print(f"[Webhook] Debug error: {e}")
+    
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
@@ -63,6 +86,36 @@ def callback_webhook2():
     """陳醫師的 Webhook 端點"""
     signature = request.headers.get('X-Line-Signature')
     body = request.get_data(as_text=True)
+    
+    # 調試：列印接收到的事件
+    try:
+        events = json.loads(body)
+        for event in events.get('events', []):
+            print(f"[Webhook2] Received event: {event.get('type')}")
+            event_type = event.get('type')
+            
+            # 自動偵測人工回覆事件
+            # LINE 的人工回覆會透過 postback 或特殊事件傳送
+            # 這裡檢查是否有特殊標記
+            if event_type == 'message':
+                message = event.get('message', {})
+                # 檢查是否是人工回覆（通常會有特殊的 source 或 metadata）
+                source = event.get('source', {})
+                user_id = source.get('userId')
+                
+                # 如果訊息來自官方帳號（人工回覆），設定冷卻期
+                # 注意：LINE 的人工回覆可能需要特殊的識別方式
+                # 這裡假設人工回覆會有特殊的訊息前綴或標記
+                text = message.get('text', '')
+                
+                # 檢查是否是人工回覆（例如：以「[人工]」開頭）
+                if text.startswith('[人工]') or text.startswith('[manual]'):
+                    if user_id:
+                        set_human_reply_cooldown(user_id)
+                        print(f"[Webhook2] Auto-detected manual reply from user {user_id}")
+    except Exception as e:
+        print(f"[Webhook2] Debug error: {e}")
+    
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
