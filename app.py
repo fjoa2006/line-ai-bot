@@ -108,8 +108,8 @@ def callback_webhook2():
                 # 這裡假設人工回覆會有特殊的訊息前綴或標記
                 text = message.get('text', '')
                 
-                # 檢查是否是人工回覆（例如：以「[人工]」開頭）
-                if text.startswith('[人工]') or text.startswith('[manual]'):
+                # 檢查是否是人工回覆（以 # 開頭）
+                if text.startswith('#'):
                     if user_id:
                         set_human_reply_cooldown(user_id)
                         print(f"[Webhook2] Auto-detected manual reply from user {user_id}")
@@ -130,8 +130,8 @@ def handle_message(event):
     # 檢查是否在人工回覆冷卻期內
     if is_in_human_reply_cooldown(user_id):
         print(f"[AI] User {user_id} is in cooldown period, skipping AI reply")
-        # 在冷卻期內不回覆，或回覆固定訊息
-        ai_reply = "感謝您的訊息，我們已收到。專人將盡快為您服務。"
+        # 在冷卻期內不回覆
+        return
     else:
         # 調用 OpenAI API
         try:
